@@ -1,5 +1,5 @@
-docker build -t ai-definition .
-docker run --rm -p 8000:8000 --name ai-def-container ai-definition
+docker build -t  me02-proyecto.
+docker run --rm -p 8000:8000 --name me02-def-container me02-proyecto
 
 localhost:8000/
 
