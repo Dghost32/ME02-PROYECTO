@@ -58,10 +58,6 @@ def reward(state, action):
     else:  # Si descartamos el paquete
         return -1 if state == BUFFER_SIZE else 0  # Penaliza -1 si el buffer está lleno
 
-# Simulamos el MDP por N iteraciones
-N = 10  # Número de iteraciones
-state = 0  # Estado inicial (buffer vacío)
-
 def simulate_mdp(N, initial_state):
     state = initial_state
     simulation_results = []
