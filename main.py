@@ -1,6 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import numpy as np
+import random
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
@@ -16,74 +22,92 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Definir tamaño máximo del buffer
-BUFFER_SIZE = 2  # Capacidad máxima del buffer
-
-# Definimos los estados del sistema
-# S = {0 (vacío), 1 (parcialmente lleno), ..., BUFFER_SIZE (lleno)}
+# System configuration
+BUFFER_SIZE = 2  # Max buffer size per server
+NUM_SERVERS = 3  # Number of servers
 STATES = list(range(BUFFER_SIZE + 1))
+ACTIONS = [0, 1, 2]  # 0: Discard, 1: Process, 2: Redirect
 
-# Definimos las acciones posibles
-# A = {0 (descartar paquete), 1 (reenviar paquete)}
-ACTIONS = [0, 1]
+# Initialize server buffers
+server_buffers = [0] * NUM_SERVERS
 
-# Definimos la función de transición de probabilidad P(s' | s, a)
-def transition(state, action):
-    """
-    Simula la transición del estado actual `state` al siguiente estado basado en la acción `action`.
-    """
-    import random
+def get_least_loaded_server():
+    return min(range(NUM_SERVERS), key=lambda i: server_buffers[i])
 
-    # Probabilidad de llegada de un nuevo paquete en cada tiempo
-    arrival_prob = 0.6  # Probabilidad de que llegue un paquete nuevo
+def transition(server, state, action):
+    """ Simulates state transitions based on actions """
+    arrival_prob = 0.6  # Probability of new request
+    processing_prob = 0.7  # Probability of successful processing
 
-    if action == 1:  # Si reenviamos el paquete
-        next_state = max(0, state - 1)  # Reducimos el nivel del buffer si no está vacío
-    else:  # Si descartamos el paquete
-        next_state = state  # El buffer se mantiene igual
+    next_state = state
+    if action == 1 and state > 0:  # Process request
+        if random.random() < processing_prob:
+            next_state = max(0, state - 1)
+            logging.info(f"Server {server} processed a request. New state: {next_state}")
+    elif action == 2 and state == BUFFER_SIZE:  # Redirect only when full
+        target_server = get_least_loaded_server()
+        if target_server != server and server_buffers[target_server] < BUFFER_SIZE:
+            server_buffers[target_server] += 1
+            logging.info(f"Redirected request from Server {server} to Server {target_server}")
+        else:
+            logging.info(f"Server {server} could not redirect; all servers full")
+    elif action == 0 and state == BUFFER_SIZE:  # Discard when full
+        logging.info(f"Server {server} discarded a request due to full buffer")
 
-    # Si llega un nuevo paquete, el buffer aumenta su ocupación
     if random.random() < arrival_prob:
         next_state = min(BUFFER_SIZE, next_state + 1)
+        logging.info(f"New request arrived at Server {server}. New state: {next_state}")
 
+    server_buffers[server] = next_state  # Update global state
     return next_state
 
-# Definimos la función de recompensa R(s, a)
 def reward(state, action):
-    """
-    Retorna la recompensa según el estado y la acción tomada.
-    """
-    if action == 1:  # Si reenviamos un paquete
-        return 1 if state > 0 else 0  # Gana +1 si hay paquetes para reenviar
-    else:  # Si descartamos el paquete
-        return -1 if state == BUFFER_SIZE else 0  # Penaliza -1 si el buffer está lleno
+    if action == 1:  # Process request
+        return 3 if state > 0 else 0
+    elif action == 2:  # Redirect request
+        return 1 if state == BUFFER_SIZE else -1
+    elif action == 0:  # Discard request
+        return -5 if state == BUFFER_SIZE else -1
+    return 0
 
-def simulate_mdp(N, initial_state):
-    state = initial_state
+def simulate_mdp(N):
+    global server_buffers
+    server_buffers = [random.randint(0, BUFFER_SIZE) for _ in range(NUM_SERVERS)]  # Random initial states
     simulation_results = []
+
     for t in range(N):
-        action = 1 if state > 0 else 0  # Política simple: reenvía si hay paquetes
+        server = random.choice(range(NUM_SERVERS))  # Pick a random server
+        state = server_buffers[server]
+
+        if state == BUFFER_SIZE:
+            action = 2  # Redirect if full
+        elif state > 0:
+            action = 1  # Process if there's something in buffer
+        else:
+            action = 0  # Discard otherwise
+
         r = reward(state, action)
-        next_state = transition(state, action)
+        next_state = transition(server, state, action)
+
+        logging.info(f"Iteration {t}: Server {server}, Action {action}, Reward {r}, Next State {next_state}")
+
         simulation_results.append({
             "iteration": t,
-            "state": state,
+            "server": server,
             "action": action,
             "reward": r,
             "next_state": next_state
         })
-        state = next_state
     return simulation_results
 
 @app.get("/")
 def read_root():
-    return {"It's Working": "Keep Coding!"}
+    return {"message": "MDP Load Balancer Running"}
 
 class Payload(BaseModel):
     N: int
-    initial_state: int
 
 @app.post("/")
 def call_model(payload: Payload):
-    simulation_results = simulate_mdp(payload.N, payload.initial_state)
-    return {"message": "MDP simulation completed", "simulation_results": simulation_results}
+    results = simulate_mdp(payload.N)
+    return {"message": "MDP simulation completed", "simulation_results": results}
