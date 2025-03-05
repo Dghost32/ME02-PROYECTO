@@ -10,9 +10,7 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:8081",
-]
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,7 +23,7 @@ app.add_middleware(
 # System configuration
 BUFFER_SIZE = 2  # Max buffer size per server
 NUM_SERVERS = 3  # Number of servers
-STATES = list(range(BUFFER_SIZE + 1))
+STATES = list(range(BUFFER_SIZE + 1)) # Number of states
 ACTIONS = [0, 1, 2]  # 0: Discard, 1: Process, 2: Redirect
 
 # Initialize server buffers
@@ -98,6 +96,7 @@ def simulate_mdp(N):
             "reward": r,
             "next_state": next_state
         })
+
     return simulation_results
 
 @app.get("/")
